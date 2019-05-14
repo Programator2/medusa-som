@@ -104,7 +104,7 @@ class SOM:
 
     def _best_matching_unit(self, vector):
         return min(
-            ((distance(vector, neuron), neuron, index) for index, neuron in enumerate(self.neurons)),
+            ((self._distance(vector, neuron), neuron, index) for index, neuron in enumerate(self.neurons)),
             key=lambda x: x[0])
 
     def _best_matching_units(self):
@@ -120,7 +120,7 @@ class SOM:
         # TODO Finish
         for i in range(iterations):
             idx = i % (self.n_samples-1)
-            self.update()
+            self.update(idx)
 
     def _update_ordinal(self, category, step):
         """Updates ordinal features. In our case, R, W and S."""
@@ -139,7 +139,7 @@ class SOM:
 
         return new_values
 
-    def _neuron_neighborhood(self) -> list:
+    def _neuron_neighborhood(self) -> dict:
         """
         This function computes a `list` of input vectors for each neuron that
         are closest to that neuron (it is the best matching unit for all
@@ -360,7 +360,7 @@ class SOM:
         new_neurons[category] = new_values
 
         # TODO Add update of path category
-        new_neurons[1] = self._update_paths
+        new_neurons[1] = self._update_paths(step)
 
         for category in (2, 3, 4):
             new_neurons[category] = self._update_ordinal(category, step)
