@@ -8,7 +8,7 @@ def min_index(l: list):
     """
     min_index = 0
     min_value = l[0]
-    for index, value in l:
+    for index, value in enumerate(l):
         if value < min_value:
             min_value = value
             min_index = index
@@ -22,8 +22,8 @@ class BetterCounter(collections.Counter):
 
         max_number = items[-1][1]
         ret = []
-        
-        while True:
+
+        while items:
             item = items.pop()
             if item[1] != max_number:
                 break
