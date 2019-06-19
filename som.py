@@ -84,11 +84,9 @@ class SOM:
         in the filesystem tree)
         """
         index = 0
-        try:
-            len_p1 = len(p1)
-            len_p2 = len(p2)
-        except:
-            breakpoint()
+        len_p1 = len(p1)
+        len_p2 = len(p2)
+
         while p1[index] == p2[index]:
             index += 1
             if index >= len_p1 or index >= len_p2:
@@ -100,7 +98,7 @@ class SOM:
         else:
             slash_num = 2
 
-        slash_num = p1[index:].count('/')
+        slash_num += p1[index:].count('/')
         slash_num += p2[index:].count('/')
 
         return slash_num
