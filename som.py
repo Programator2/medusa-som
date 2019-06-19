@@ -59,13 +59,8 @@ class SOM:
         """
         Generate random vector from input data
         """
-        return [
-            random.choice(self.data)[0],
-            random.choice(self.data)[1],
-            random.randint(0, 1),
-            random.randint(0, 1),
-            random.randint(0, 1),
-        ]
+        neuron = [random.choice(self.data)[i] for i in range(len(self.data[0]))]
+        return neuron
 
     def decay(self, step):
         return self.learning_rate / (1+step/(self.max_iter/2))
