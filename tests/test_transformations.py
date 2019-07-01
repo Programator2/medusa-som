@@ -25,13 +25,13 @@ class TestTransformations(unittest.TestCase):
         new = '/home/user/typography/doc.pdf'
         original = '/home/user'
         ret = paths.find_transformation(original, new)
-        self.assertEqual(ret, 'typography')    
+        self.assertEqual(ret, 'typography')
 
     def test_down_file(self):
         new = '/home/user/doc.pdf'
         original = '/home/user'
         ret = paths.find_transformation(original, new)
-        self.assertEqual(ret, 'doc.pdf')    
+        self.assertEqual(ret, 'doc.pdf')
 
 if __name__ == '__main__':
     unittest.main()

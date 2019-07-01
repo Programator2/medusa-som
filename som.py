@@ -3,6 +3,7 @@ import math
 import operator
 import random
 from statistics import mean
+from pprint import pprint
 
 from paths import find_transformation
 from utils import min_index, BetterCounter
@@ -37,6 +38,8 @@ class SOM:
 
         self.data = [x for x in data if isinstance(x[1], str)]
 
+        self._dimension_check(self.data)
+
         # Kolko je unikatnych procesov?
         self.processes = tuple({x[0] for x in self.data})
 
@@ -54,6 +57,25 @@ class SOM:
 
         # Create neurons for the map, initialize them with random values
         self.neurons = [self._random_neuron() for x in range(size**2)]
+
+        # Stores dictionary mapping from int (id of category) -> list of
+        # neurons in that category
+        self.neurons_by_cat_id = None
+
+        # Vectors of cluster centers
+        self.centers = None
+
+        self.categories = None
+
+    def _dimension_check(self, data: list):
+        """
+        Checks if all vectors in `data` have the same length as `self.data[0]`
+        Raises RuntimeError if not.
+        :param data: list of vectors
+        """
+        size = len(self.data[0])
+        if any(map(lambda x: len(x) != size, self.data)):
+            raise RuntimeError('Wrong dimension')
 
     def _random_neuron(self):
         """
@@ -129,7 +151,7 @@ class SOM:
         """
         Computes distance between vectors x and m.
         """
-        distance = x[0] == m[0]
+        distance = int(x[0] == m[0])*3
 
         distance += SOM.path_distance(x[1], m[1])
 
@@ -151,7 +173,7 @@ class SOM:
         :returns: list of best matching units corresponding to each data input
         """
         return [
-            self._best_matching_unit(input_vector)[1] for input_vector in self.data
+                self._best_matching_unit(input_vector)[1:] for input_vector in self.data
         ]
 
     def train(self, iterations):
@@ -165,9 +187,9 @@ class SOM:
         """Updates ordinal features. In our case, R, W and S."""
         new_values = [0] * len(self.neurons)
 
-        weights, neigh_sum = self._neighbour_weights(category, step, best_matching_units)
 
         for p_id, p in enumerate(self.neurons):
+            weights, neigh_sum = self._neighbour_weights(step, best_matching_units, p_id)
             allowed_frequency = sum(
                 weights[index] for index, input_vector in enumerate(self.data)
                 if input_vector[category] == 1
@@ -212,6 +234,15 @@ class SOM:
                     ret.append(index)
         return ret
 
+    def _topological_distance(self, neuron_index_a: int, neuron_index_b: int):
+        a = neuron_index_a
+        b = neuron_index_b
+
+        a = (a % self.col_sz, a // self.row_sz)
+        b = (b % self.col_sz, b // self.row_sz)
+
+        return int(math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2))
+
     def _neighborhood_set(self, neuron_index: int, distance: int, neuron_neighborhood: dict):
         ret = set(neuron_neighborhood[neuron_index])
         neighborhood = self._topological_neighborhood(neuron_index, distance)
@@ -219,47 +250,52 @@ class SOM:
             ret.update(neuron_neighborhood[index])
         return ret
 
+    @staticmethod
+    def find_median(paths):
+        """
+        :returns: tuple of (median path: str, error)
+        """
+        paths = list(paths)
+        distance_sum = [0] * len(paths)
+
+        for index, path in enumerate(paths):
+            distance_sum[index] = sum(
+                SOM.path_distance(path, other_path) for other_path in paths
+            )
+
+        # XXX What to do if there are more minims?
+
+        median = min_index(distance_sum)
+
+        return paths[median[0]][PATH_CATEGORY], median[1]
+
+    @staticmethod
+    def transform(path, transformation):
+        """Tranforms `path` using `transformation`"""
+        if not transformation:
+            return path
+        elif transformation == '..':
+            index = path.rfind('/')
+            if index == 0:
+                return '/'
+            elif index > 0:
+                return path[:index]
+            else:
+                raise ValueError(f'Invalid path: {path}')
+        else:
+            try:
+                return path + '/' + transformation
+            except:
+                breakpoint()
+
     def _update_paths(self, iteration: int):
         """Updates file paths of neurons. Update is not stored immediately, new values
         are returned in a list.
         :param iteration: iteration of the update function
         """
 
-        def find_median(paths):
-            """
-            :returns: tuple of (median path: str, error)
-            """
-            paths = list(paths)
-            distance_sum = [0] * len(paths)
-
-            for index, path in enumerate(paths):
-                distance_sum[index] = sum(
-                    SOM.path_distance(path, other_path) for other_path in paths
-                )
-
-            # XXX What to do if there are more minims?
-
-            median = min_index(distance_sum)
-
-            return paths[median[0]][PATH_CATEGORY], median[1]
-
-        def transform(path, transformation):
-            """Tranforms `path` using `transformation`"""
-            if not transformation:
-                return path
-            elif transformation == '..':
-                index = path.rfind('/')
-                if index == 0:
-                    return '/'
-                elif index > 0:
-                    return path[:index]
-                else:
-                    raise ValueError(f'Invalid path: {path}')
-            else:
-                try:
-                    return path + '/' + transformation
-                except:
-                    breakpoint()
+        find_median = self.find_median
+        transform = self.transform
 
         # This is where we store new paths for the neurons, they will be stored
         # in original order
@@ -268,14 +304,18 @@ class SOM:
         # Counter for neurons with empty neighborhood
         empty_neighborhood = 0
 
-        # Compute neighborhood for each neuron
+        # Compute neighborhood for each neuron in the *input space*
         neighborhood_for_neuron = self._neuron_neighborhood()
+
+        distance = int((1 - self.col_sz / 3.5) / (self.max_iter - 1) *
+                       iteration + self.col_sz / 3.5)
+        print('distance is', distance)
 
         for p_id, p in enumerate(self.neurons):
             # Compute new value for each neuron
 
             # Get the neighborhood of the neuron (input vectors from the topological neighborhood)
-            neighborhood = self._neighborhood_set(p_id, 1, neighborhood_for_neuron)
+            neighborhood = self._neighborhood_set(p_id, distance, neighborhood_for_neuron)
             neighborhood = list(neighborhood)
 
             # When there are no neighbours:
@@ -336,9 +376,10 @@ class SOM:
                         improvement = False
 
             # This is a new path for the `p_id`-th neuron
+            # print('appending', average)
             new_paths.append(average)
 
-        print('_update_paths(): neighborhood was empty', empty_neighborhood, 'times')
+        # print('_update_paths(): neighborhood was empty', empty_neighborhood, 'times')
         return new_paths
 
     def _apply_update(self, new_neurons: list):
@@ -349,22 +390,32 @@ class SOM:
         neurons in SOM
 
         """
+        distance_sum = 0
+        new_neurons = list(map(list, zip(*new_neurons)))
         try:
-            for cat_index, c in enumerate(new_neurons):
-                for neuron_index, neuron in enumerate(self.neurons):
-                    neuron[cat_index] = c[neuron_index]
+            # for cat_index, c in enumerate(new_neurons):
+            for neuron_index, neuron in enumerate(self.neurons):
+                distance_sum += self._distance(neuron, new_neurons[neuron_index])
+                neuron = new_neurons[neuron_index]
+            print('Summed error:', distance_sum)
         except ValueError as e:
             print(e)
             breakpoint()
 
-    def _neighbour_weights(self, category, step, best_matching_units):
+    def _neighbour_weights(self, step, best_matching_units, p_id):
+        """
+        :param p_id: index of neuron
+        """
         neigh_sum = 0
         weights = []
 
         for input_index, input_vector in enumerate(self.data):
-            bmu = best_matching_units[input_index]
-            weight = self.neighbour(self._distance_category(bmu, input_vector, category),
-                                    step)
+            try:
+                bmu_id = best_matching_units[input_index][1]
+            except TypeError:
+                breakpoint()
+            distance = self._topological_distance(bmu_id, p_id)
+            weight = self.neighbour(distance, step)
             weights.append(weight)
             neigh_sum += weight
 
@@ -385,6 +436,7 @@ class SOM:
         # k is active category
         category = 0
 
+        # F = {}
 
         new_values = [0] * len(self.neurons)
 
@@ -397,24 +449,21 @@ class SOM:
             max_process_id = 0
             max_process_name = p[category]
 
-            weights, neigh_sum = self._neighbour_weights(category, step, best_matching_units)
+            weights, neigh_sum = self._neighbour_weights(step, best_matching_units, p_id)
 
             for r_id, r in enumerate(self.processes):
                 same_category = 0
                 for input_index, input_vector in enumerate(self.data):
-                    if best_matching_units[category] == r:
+                    if input_vector[category] == r:
                         same_category += weights[input_index]
 
-                try:
-                    F[r_id] = same_category / neigh_sum
-                except:
-                    breakpoint()
+                F[r_id] = same_category / neigh_sum
 
                 if F[r_id] > max_frequency:
                     # TODO What if there is more than one maximum?
                     max_frequency = F[r_id]
                     max_process_id = r_id
-                    print('Handling process', p_id, 'New maximum is', r_id)
+                    # print('Handling process', p_id, 'New maximum is', r_id)
                     max_process_name = r
 
             # Compute new value for the neuron
@@ -429,7 +478,6 @@ class SOM:
 
         new_neurons[category] = new_values
 
-        # TODO Add update of path category
         new_neurons[1] = self._update_paths(step)
 
         for category in (2, 3, 4):
@@ -454,3 +502,202 @@ class SOM:
             average = mean(distances)
             matrix_row.append(average)
         return matrix
+
+    def find_clusters(self, n):
+        # short names for static methods
+        find_median = self.find_median
+        transform = self.transform
+
+        # Choose cluster centers randomly from neurons
+        centers = random.sample(self.neurons, n)
+
+        improvement = True
+        count = 0
+        while improvement:
+            count += 1
+            # print('clustering', count)
+            improvement = False
+            # Convert centers to tuples so they can be hashed
+            centers = [tuple(x) for x in centers]
+
+            # Determine the categories of neurons
+            categories = defaultdict(list) # dictionary center -> [neurons]
+            for i, neuron in enumerate(self.neurons):
+                bmu = min(((
+                    self._distance(center, neuron), center, index)
+                    for index, center in enumerate(centers)),
+                    key=lambda x: x[0])
+                categories[bmu[1]].append(neuron)
+            self.categories = categories
+
+
+            # Compute new value for each category
+            new_centers = [list(x) for x in centers]
+
+            ### Process ###
+
+            # k is active feature of the vector
+            feature = 0
+
+            for center_id, center in enumerate(centers):
+
+                processes = [x[feature] for x in categories.get(center, [])]
+                if not processes:
+                    continue
+                process_counter = BetterCounter(processes)
+                most_common_list = process_counter.most_common()
+                most_common_process = random.choice(most_common_list)[0]
+                if new_centers[center_id][feature] != most_common_process:
+                    improvement = True
+                new_centers[center_id][feature] = most_common_process
+
+            ### Path ###
+
+            for center_id, center in enumerate(centers):
+                # Compute new value for each neuron
+
+                # Get the neighborhood of the neuron (input vectors from the topological neighborhood)
+                neighborhood = categories.get(center, [])
+
+                # When there are no neighbours:
+                if not neighborhood:
+                    # empty_neighborhood += 1
+                    continue
+
+                # Compute average path from the neighborhood
+                average, error = find_median(neighborhood)
+
+                improvement = True
+                while improvement:
+                    counter = BetterCounter()
+
+                    # Search how the average path needs to be changed to be the
+                    # same as each of its neighbour. Count the transformations.
+                    # There are three transformations:
+                    # 1) go up (..)
+                    # 2) go down in the directory structure
+                    # 3) do nothing (paths are equal)
+                    for neighbour in neighborhood:
+                        transformation = find_transformation(average, neighbour)
+                        if transformation == '.':
+                            breakpoint()
+                        counter.update([transformation])
+
+                    # Apply the most frequent transformation
+                    most_frequent = counter.most_common()
+                    if len(most_frequent) == 1:
+                        # There were no ties --- ideal case
+                        transformation = most_frequent[0][0]
+                        if not transformation:
+                            # empty string means the paths are equal, we are
+                            # finished --- unlikely to happen
+                            break
+                        transformations = [transformation]
+                    elif len(most_frequent) > 1:
+                        # There were ties. We are going to try each transformation
+                        # and find one that gives smaller error value
+                        transformations = [x[0] for x in most_frequent]
+                    else:
+                        raise RuntimeError('Unexpected length of most_frequent')
+
+                    for t in transformations:
+                        new_average = transform(average, t)
+                        new_error = SOM.summed_distance(new_average, neighborhood)
+                        if new_error < error:
+                            average = new_average
+                            error = new_error
+                            break
+                        else:
+                            # No transformation was better --- we are finished with
+                            # neuron `p`
+                            improvement = False
+
+                # This is a new path for the `center_id`-th cluster center
+                if new_centers[center_id][1] != average and count < 50:
+                    improvement = True
+                    # print(center_id, 'improved')
+                new_centers[center_id][1] = average
+
+            # Permissions
+
+            centers = new_centers
+        self.centers = centers
+
+        # Determine the categories of neurons
+        # once again because there are old values from the previous run of the
+        # loop
+        categories = defaultdict(list) # dictionary center -> [neurons]
+        for i, neuron in enumerate(self.neurons):
+            bmu = min(((
+                self._distance(center, neuron), center, index)
+                for index, center in enumerate(centers)),
+                key=lambda x: x[0])
+            categories[bmu[2]].append(neuron)
+        self.neurons_by_cat_id = categories
+
+        return centers
+
+    def neuron_categories(self) -> list:
+        """
+        :returns: list of len(self.neurons) numbers 0..n-1, where n-1 is
+        number of categories. Position in the list corresponds with
+        a neuron at that position
+        """
+        categories = []
+        for i, neuron in enumerate(self.neurons):
+            bmu_i = min(((
+                self._distance(center, neuron), center, index)
+                for index, center in enumerate(self.centers)),
+                key=lambda x: x[0])[2]
+            categories.append(bmu_i)
+        return categories
+
+    def output_categories(self, n):
+        """
+        Creates a file categories.txt, in which all clustered input vectors
+        will be printed
+        """
+        f = open(f'categories-{n}.txt', 'w')
+        d = defaultdict(list)
+        best_matching_units = self._best_matching_units()
+        #breakpoint()
+        for index, (neuron, i) in enumerate(best_matching_units):
+            d[tuple(neuron)].append(self.data[index])
+        for center, neurons in self.categories.items():
+            print('Center:', center, file=f)
+            for n in neurons:
+                pprint(d.get(tuple(n), ['nothing']), stream=f)
+            print('-'*80, '\n', '-'*80, file=f)
+        f.close()
+
+    def cluster_quality(self):
+        """
+        Computes the Davies-Bouldin index
+        """
+        n_clusters = len(self.neurons_by_cat_id)
+        total_sum = 0
+        for k in self.neurons_by_cat_id:
+            max_sum = 0
+            max_cat = 0
+            for l in self.neurons_by_cat_id :
+                if k == l:
+                    continue
+                sum_value = ((self.centroid_distance(k) +
+                              self.centroid_distance(l)) /
+                             self.between_clusters_distance(k, l))
+                if sum_value > max_sum:
+                    max_sum = sum_value
+                    max_cat = l
+            total_sum += max_sum
+        return total_sum / n_clusters
+
+    def centroid_distance(self, category):
+        input_vectors = self.neurons_by_cat_id[category]
+        center = self.centers[category]
+        total_distance = sum(self._distance(x, center) for x in input_vectors)
+        return total_distance / len(input_vectors)
+
+    def between_clusters_distance(self, category1, category2):
+        c1 = self.centers[category1]
+        c2 = self.centers[category2]
+        return self._distance(c1, c2)

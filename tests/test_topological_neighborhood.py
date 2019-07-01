@@ -2,29 +2,26 @@ import unittest
 
 import som
 
-class TestNeighborhood(unittest.TestCase):
+class TestTopologicalDistance(unittest.TestCase):
     def setUp(self):
         self.som = som.SOM([])
-        self.som.col_sz = 4
-        self.som.row_sz = 4
+        self.som.col_sz = 7
+        self.som.row_sz = 7
 
-    def test_edge(self):
+    def test_1(self):
         s = self.som
-        neighborhood = s._topological_neighborhood(8, 1)
-        expected_neighborhood = [4, 5, 9, 12, 13]
-        self.assertCountEqual(neighborhood, expected_neighborhood)
+        distance = s._topological_distance(23, 31)
+        self.assertEqual(distance, 1)
 
-    def test_corner(self):
+    def test_2(self):
         s = self.som
-        neighborhood = s._topological_neighborhood(15, 1)
-        expected_neighborhood = [10, 11, 14]
-        self.assertCountEqual(neighborhood, expected_neighborhood)
+        distance = s._topological_distance(23, 10)
+        self.assertEqual(distance, 2)
 
-    def test_inside(self):
+    def test_6(self):
         s = self.som
-        neighborhood = s._topological_neighborhood(6, 1)
-        expected_neighborhood = [1, 2, 3, 5, 7, 9, 10, 11]
-        self.assertCountEqual(neighborhood, expected_neighborhood)
+        distance = s._topological_distance(42, 3)
+        self.assertEqual(distance, 6)
 
 
 if __name__ == '__main__':
